@@ -35,32 +35,32 @@ class NaverBand:
         self.auth_base_url = 'https://auth.band.us'
 
     def set_access_token(self):
-        req_data = BandAuthorize(client_id=self.client_id,
-                                 client_secret=self.client_secret,
-                                 response_type='code')
-        req_params = req_data.authorize_params()
+        access_token = keyring.get_password('opendbandpy',
+                                            'access_token')
+        if not access_token:
+            req_data = BandAuthorize(client_id=self.client_id,
+                                     client_secret=self.client_secret,
+                                     response_type='code',
+                                     grant_type='authorization_cod')
+            req_params = req_data.authorize_params()
 
-        auth_url = f'{self.auth_base_url}/oauth2/authorize?{req_params}'
+            auth_url = f'{self.auth_base_url}/oauth2/authorize?{req_params}'
 
-        webbrowser.open(auth_url)
-        one_time_server = HTTPServer(("0.0.0.0", 8000), WebRequestHandler)
-        one_time_server.handle_request()
-        authorization_code = keyring.get_password('openbandpy',
-                                                  'authorization_code')
+            webbrowser.open(auth_url)
+            one_time_server = HTTPServer(("0.0.0.0", 8000), WebRequestHandler)
+            one_time_server.handle_request()
 
-        # Request an access token from auth.band.us
-        req_data = BandAuthorize(code=authorization_code, grant_type='code')
-        req_params = req_data.token_params()
-        access_token_url = f'{self.auth_base_url}/oauth2/token?{req_params}'
+            # Request an access token from auth.band.us
+            req_params = req_data.token_params()
+            access_token_url = f'{self.auth_base_url}/oauth2/token?{req_params}'
 
-        auth = HTTPBasicAuth(self.client_id, self.client_secret)
-        req = requests.get(access_token_url, auth=auth)
-        res_json = json.loads(req.content)
+            auth = HTTPBasicAuth(self.client_id, self.client_secret)
+            req = requests.get(access_token_url, auth=auth)
+            res_json = json.loads(req.content)
 
-        print(res_json)
-        keyring.set_password('opendbandpy',
-                             'access_token',
-                             res_json.get('access_token'))
+            keyring.set_password('opendbandpy',
+                                 'access_token',
+                                 res_json.get('access_token'))
 
     def profile(self, band_key=None):
         params = {'access_token': self.access_token}

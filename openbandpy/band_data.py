@@ -1,17 +1,18 @@
 import urllib.parse
 
+import keyring
+
 from openbandpy.band_exception import BandAPIException
 
 
 class BandAuthorize:
-    def __init__(self, *, client_id=None, client_secret=None, code=None,
+    def __init__(self, *, client_id=None, client_secret=None,
                  redirect_uri=None, response_type=None, grant_type=None):
         self.response_type = response_type
         self.grant_type = grant_type
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
-        self.code = code
 
     def authorize_params(self):
         if self.response_type != 'code':
@@ -25,7 +26,10 @@ class BandAuthorize:
         if self.grant_type != 'authorization_code':
             raise BandAPIException('Invalid grant_type')
 
+        authorization_code = keyring.get_password('openbandpy',
+                                                  'authorization_code')
+
         return urllib.parse.urlencode({
-            'code': self.code,
+            'code': authorization_code,
             'grant_type': self.grant_type
         })
