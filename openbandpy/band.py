@@ -6,14 +6,10 @@ from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qsl, urlparse
 from urllib.parse import urlencode
 from requests.auth import HTTPBasicAuth
+from .band_data import BandAuthorize
+import keyring
 
-
-class BandAPIHTTPServer(HTTPServer):
-    def save_authorization_code(self, data):
-        self.__authorization_code = data
-    
-    def get_authorization_code(self):
-        return self.__authorization_code
+from .band_exception import BandAPIException
 
 
 class WebRequestHandler(BaseHTTPRequestHandler):
@@ -24,54 +20,47 @@ class WebRequestHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
         url_query = dict(parse_qsl(self.url().query))
-        # self.wfile.write(b"111")
-        self.server.save_authorization_code(url_query['code'])
-
-
-class BandAPIException(Exception):
-    def __init__(self, message):
-        super(BandAPIException, self).__init__(message)
+        keyring.set_password('opendbandpy',
+                             'authorization_code',
+                             url_query['code'])
 
 
 class NaverBand:
-    def __init__(self, client_id, client_secret, redirect_uri) -> None:
+    def __init__(self, client_id, client_secret) -> None:
         self.client_id = client_id
         self.client_secret = client_secret
-        self.redirect_uri = redirect_uri
+        self.redirect_uri = 'http://localhost:8000'
         self.access_token = None
         self.band_base_url = 'https://openapi.band.us'
-    
-    def auth_url_make(self, auth_type, req_type):
-        req_type_query = ''
-        if req_type == 'response_type':
-            req_type_query = 'response_type=code'
-        elif req_type == 'grant_type':
-            req_type_query = 'grant_type=authorization_code'
-        
-        return f'https://auth.band.us/oauth2/{auth_type}?{req_type_query}'
-    
+        self.auth_base_url = 'https://auth.band.us'
+
     def set_access_token(self):
-        auth_url = self.auth_url_make('authorize', 'response_type')
-        authorize_code_url = ('{auth_url}'
-                              '&client_id={client_id}'
-                              '&redirect_uri={redirect_uri}')
-        
-        webbrowser.open(authorize_code_url.format(
-            auth_url=auth_url,
-            client_id=self.client_id,
-            redirect_uri=self.redirect_uri))
-        one_time_server = BandAPIHTTPServer(("0.0.0.0", 8000), WebRequestHandler)
+        req_data = BandAuthorize(client_id=self.client_id,
+                                 client_secret=self.client_secret,
+                                 response_type='code')
+        req_params = req_data.authorize_params()
+
+        auth_url = f'{self.auth_base_url}/oauth2/authorize?{req_params}'
+
+        webbrowser.open(auth_url)
+        one_time_server = HTTPServer(("0.0.0.0", 8000), WebRequestHandler)
         one_time_server.handle_request()
-        authorization_code = one_time_server.get_authorization_code()
+        authorization_code = keyring.get_password('openbandpy',
+                                                  'authorization_code')
 
         # Request an access token from auth.band.us
-        auth_url = self.auth_url_make('token', 'grant_type')
-        access_token_url = f'{auth_url}&code={authorization_code}'
+        req_data = BandAuthorize(code=authorization_code, grant_type='code')
+        req_params = req_data.token_params()
+        access_token_url = f'{self.auth_base_url}/oauth2/token?{req_params}'
 
         auth = HTTPBasicAuth(self.client_id, self.client_secret)
         req = requests.get(access_token_url, auth=auth)
         res_json = json.loads(req.content)
-        self.access_token = res_json.get('access_token')
+
+        print(res_json)
+        keyring.set_password('opendbandpy',
+                             'access_token',
+                             res_json.get('access_token'))
 
     def profile(self, band_key=None):
         params = {'access_token': self.access_token}

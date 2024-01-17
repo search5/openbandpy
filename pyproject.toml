@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "pyband"
+name = "openbandpy"
 version = "0.1.0"
 description = "Python-based Naver Band API"
 authors = ["Ji-ho Lee <search5@gmail.com>"]
@@ -7,8 +7,9 @@ license = "Apache License 2.0"
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.7"
+python = "^3.8"
 requests = "^2.31.0"
+keyring = "^24.3.0"
 
 
 [build-system]
