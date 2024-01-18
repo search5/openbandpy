@@ -78,9 +78,48 @@ class BandWrite:
         return dict(content=self.content, do_push=self.do_push)
 
 
-class BandCommentWrite:
-    def __init__(self):
-        pass
+class BandComment:
+    def __init__(self, **data):
+        self.band_base_url = 'https://openapi.band.us'
+        self.body = data.get('body')
+        if 'author' in data:
+            self.author = BandAuthor(**data.get('author'))
+        if 'created_at' in data:
+            self.created_at = timestamptodatetime(data['created_at'])
+        self.band_key = data.get('band_key')
+        self.post_key = data.get('post_key')
+        self.comment_key = data.get('comment_key')
+        self.content = data.get('content')
+        self.emotion_count = data.get('emotion_count')
+        self.is_audio_included = data.get('is_audio_included')
+        if data.get('photo'):
+            self.photo = BandCommentPhoto(**data.get('photo'))
+
+    def __repr__(self):
+        content = self.body or self.content
+        return f"<BandComment {content} {self.created_at}>"
+
+    def __getitem__(self, item):
+        return getattr(self, item)
+
+    @property
+    def access_token(self):
+        return keyring.get_password("OPENBAND",
+                                    'access_token')
+
+    def params(self):
+        return dict(body=self.body)
+
+    def delete(self):
+        params = {'access_token': self.access_token,
+                  'band_key': self.band_key,
+                  'post_key': self.post_key,
+                  'comment_key': self.comment_key}
+
+        res = requests.post(f'{self.band_base_url}/v2/band/post/comment/remove',
+                            params=params)
+        return response_parse(res).get('result_data', {}).get(
+            'message', 'Error!')
 
 
 class Band:
@@ -117,6 +156,18 @@ class Band:
         data = response_parse(res).get('result_data', {})
 
         return dict(post_key=data['post_key'])
+
+    def permissions(self):
+        # TODO
+        pass
+
+    def albums(self):
+        # TODO
+        pass
+
+    def photos(self):
+        # TODO
+        pass
 
 
 class Profile:
@@ -264,8 +315,16 @@ class Post:
         return (tuple(map(lambda x: BandComment(**x), comment_list)),
                 paging['next_params'])
 
-    def write_comment(self):
-        pass
+    def write_comment(self, data: BandComment):
+        params = data.params()
+        params.update(access_token=self.access_token,
+                      band_key=self.band_key,
+                      post_key=self.post_key)
+        req_url = f'{self.band_base_url}/v2/band/post/comment/create'
+        res = requests.post(req_url, params=params)
+        data = response_parse(res).get('result_data', {})
+
+        return dict(message=data['message'])
 
 
 def makeobjectlist(klass, data):
@@ -304,25 +363,6 @@ class BandPhoto:
     def __repr__(self):
         return (f'<Photo {self.url} / {self.width}x{self.height} '
                 f'/ {self.created_at}>')
-
-
-class BandComment:
-    def __init__(self, **data):
-        self.body = data.get('body')
-        self.author = BandAuthor(**data['author'])
-        self.created_at = timestamptodatetime(data['created_at'])
-        self.band_key = data.get('band_key')
-        self.post_key = data.get('post_key')
-        self.comment_key = data.get('comment_key')
-        self.content = data.get('content')
-        self.emotion_count = data.get('emotion_count')
-        self.is_audio_included = data.get('is_audio_included')
-        if data.get('photo'):
-            self.photo = BandCommentPhoto(**data.get('photo'))
-
-    def __repr__(self):
-        content = self.body or self.content
-        return f"<BandComment {content} {self.created_at}>"
 
 
 class BandCommentPhoto:
