@@ -244,16 +244,28 @@ class Post:
         return response_parse(res).get('result_data', {}).get(
             'message', 'Error!')
 
-    def comments(self, sort='+'):
+    def comments(self, sort='+', next_params=None):
         params = {'access_token': self.access_token,
                   'band_key': self.band_key,
                   'post_key': self.post_key,
                   'sort': f'{sort}created_at'}
 
+        if next_params:
+            params.update(next_params)
+
         res = requests.get(f'{self.band_base_url}/v2/band/post/comments',
-                            params=params)
-        return response_parse(res).get('result_data', {}).get(
-            'message', 'Error!')
+                           params=params)
+
+        res_json = response_parse(res).get('result_data', {})
+
+        comment_list = res_json.get('items', [])
+        paging = res_json.get('paging')
+
+        return (tuple(map(lambda x: BandComment(**x), comment_list)),
+                paging['next_params'])
+
+    def write_comment(self):
+        pass
 
 
 def makeobjectlist(klass, data):
@@ -299,3 +311,22 @@ class BandComment:
         self.body = data.get('body')
         self.author = BandAuthor(**data['author'])
         self.created_at = timestamptodatetime(data['created_at'])
+        self.band_key = data.get('band_key')
+        self.post_key = data.get('post_key')
+        self.comment_key = data.get('comment_key')
+        self.content = data.get('content')
+        self.emotion_count = data.get('emotion_count')
+        self.is_audio_included = data.get('is_audio_included')
+        if data.get('photo'):
+            self.photo = BandCommentPhoto(**data.get('photo'))
+
+    def __repr__(self):
+        content = self.body or self.content
+        return f"<BandComment {content} {self.created_at}>"
+
+
+class BandCommentPhoto:
+    def __init__(self, **data):
+        self.url = data.get('url')
+        self.height = data.get('height')
+        self.width = data.get('width')
