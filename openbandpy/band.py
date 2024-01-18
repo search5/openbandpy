@@ -36,7 +36,8 @@ class NaverBand:
 
     @property
     def access_token(self):
-        return keyring.get_password("OPENBAND", 'access_token')
+        # return keyring.get_password("OPENBAND", 'access_token')
+        return None
 
     def set_access_token(self):
         if not self.access_token:

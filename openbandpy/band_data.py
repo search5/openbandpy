@@ -69,6 +69,20 @@ class BandAuthorize:
         })
 
 
+class BandWrite:
+    def __init__(self, content, do_push):
+        self.content = content
+        self.do_push = do_push
+
+    def params(self):
+        return dict(content=self.content, do_push=self.do_push)
+
+
+class BandCommentWrite:
+    def __init__(self):
+        pass
+
+
 class Band:
     def __init__(self, name, band_key, cover, member_count):
         self.name = name
@@ -83,11 +97,22 @@ class Band:
         return getattr(self, name)
 
     @property
+    def access_token(self):
+        return keyring.get_password("OPENBAND", 'access_token')
+
+    @property
     def me_profile(self):
         return Profile(self.band_key).request()
 
     def posts(self, next_params=None):
         return Post(band_key=self.band_key, next_params=next_params).list()
+
+    def write(self, data: BandWrite):
+        params = data.params()
+        params.update(access_token=self.access_token, band_key=self.band_key)
+        res = requests.get(f'{self.band_base_url}/v2.2/band/post/create', params=data.params())
+        self.profile_data = response_parse(res).get('result_data', {})
+        return self
 
 
 class Profile:
