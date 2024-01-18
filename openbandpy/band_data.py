@@ -2,6 +2,7 @@ import json
 import locale
 import urllib.parse
 from datetime import datetime
+from functools import cached_property
 
 import keyring
 import requests
@@ -79,8 +80,9 @@ class BandWrite:
 
 
 class BandComment:
-    def __init__(self, **data):
+    def __init__(self, band_permissions=None, **data):
         self.band_base_url = 'https://openapi.band.us'
+        self.band_permissions = band_permissions
         self.body = data.get('body')
         if 'author' in data:
             self.author = BandAuthor(**data.get('author'))
@@ -111,6 +113,9 @@ class BandComment:
         return dict(body=self.body)
 
     def delete(self):
+        if 'contents_deletion' not in self.band_permissions:
+            raise BandAPIException("The band doesn't have delete permissions.")
+
         params = {'access_token': self.access_token,
                   'band_key': self.band_key,
                   'post_key': self.post_key,
@@ -146,9 +151,13 @@ class Band:
         return Profile(self.band_key).request()
 
     def posts(self, next_params=None):
-        return Post(band_key=self.band_key, next_params=next_params).list()
+        return Post(band_key=self.band_key, next_params=next_params,
+                    band_permission=self.permissions).list()
 
     def write(self, data: BandWrite):
+        if 'posting' not in self.permissions:
+            raise BandAPIException("The band doesn't have write permissions.")
+
         params = data.params()
         params.update(access_token=self.access_token, band_key=self.band_key)
         res = requests.post(f'{self.band_base_url}/v2.2/band/post/create',
@@ -157,12 +166,23 @@ class Band:
 
         return dict(post_key=data['post_key'])
 
+    @cached_property
     def permissions(self):
-        # TODO
-        pass
+        params = dict(access_token=self.access_token, band_key=self.band_key,
+                      permissions='posting,commenting,contents_deletion')
+        res = requests.get(f'{self.band_base_url}/v2/band/permissions',
+                            params=params)
+        data = response_parse(res).get('result_data', {})
+
+        return data['permission']
 
     def albums(self):
         # TODO
+        """[GET] https://openapi.band.us/v2/band/albums
+        Parameters
+        Name	Type	Mandatory	Description
+        access_token	string	Y	사용자 인증 접근 토큰
+        band_key	string	Y	밴드 식별자"""
         pass
 
     def photos(self):
@@ -211,8 +231,9 @@ class Profile:
 
 
 class Post:
-    def __init__(self, *, band_key=None, next_params=None, **post_data):
+    def __init__(self, *, band_key=None, next_params=None, band_permissions=None, **post_data):
         self.band_key = band_key or post_data['band_key']
+        self.band_permissions = band_permissions
         self.band_base_url = 'https://openapi.band.us'
         self.post_data = {}
         self.next_params = next_params
@@ -286,6 +307,9 @@ class Post:
         return getattr(self, item)
 
     def delete(self):
+        if 'contents_deletion' not in self.band_permissions:
+            raise BandAPIException("The band doesn't have delete permissions.")
+
         params = {'access_token': self.access_token,
                   'band_key': self.band_key,
                   'post_key': self.post_key}
@@ -316,6 +340,9 @@ class Post:
                 paging['next_params'])
 
     def write_comment(self, data: BandComment):
+        if 'commenting' not in self.band_permissions:
+            raise BandAPIException("You don't have permission to comment on the band")
+
         params = data.params()
         params.update(access_token=self.access_token,
                       band_key=self.band_key,
