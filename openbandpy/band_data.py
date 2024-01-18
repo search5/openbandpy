@@ -89,16 +89,18 @@ class Band:
         self.band_key = band_key
         self.cover = cover
         self.member_count = member_count
+        self.band_base_url = 'https://openapi.band.us'
 
     def __repr__(self):
         return f"'{self.name}'"
 
-    def __getattr__(self, name):
+    def __getitem__(self, name):
         return getattr(self, name)
 
     @property
     def access_token(self):
-        return keyring.get_password("OPENBAND", 'access_token')
+        return keyring.get_password("OPENBAND",
+                                    'access_token')
 
     @property
     def me_profile(self):
@@ -110,9 +112,11 @@ class Band:
     def write(self, data: BandWrite):
         params = data.params()
         params.update(access_token=self.access_token, band_key=self.band_key)
-        res = requests.get(f'{self.band_base_url}/v2.2/band/post/create', params=data.params())
-        self.profile_data = response_parse(res).get('result_data', {})
-        return self
+        res = requests.post(f'{self.band_base_url}/v2.2/band/post/create',
+                            params=params)
+        data = response_parse(res).get('result_data', {})
+
+        return dict(post_key=data['post_key'])
 
 
 class Profile:
@@ -123,14 +127,16 @@ class Profile:
 
     @property
     def access_token(self):
-        return keyring.get_password("OPENBAND", 'access_token')
+        return keyring.get_password("OPENBAND",
+                                    'access_token')
 
     def request(self):
         params = {'access_token': self.access_token}
         if self.band_key:
             params['band_key'] = self.band_key
 
-        res = requests.get(f'{self.band_base_url}/v2/profile', params=params)
+        res = requests.get(f'{self.band_base_url}/v2/profile',
+                           params=params)
         self.profile_data = response_parse(res).get('result_data', {})
         return self
 
@@ -143,7 +149,8 @@ class Profile:
         user_name = self.profile_data['name']
         if 'member_joined_at' not in self.profile_data:
             return user_name
-        return f"{user_name} / Join {timestamptodatetime(self.profile_data['member_joined_at'])}"
+        return (f"{user_name} / Join "
+                f"{timestamptodatetime(self.profile_data['member_joined_at'])}")
 
     def __dir__(self):
         keys = ['is_app_member', 'request', 'user_key', 'profile_image_url',
@@ -162,7 +169,7 @@ class Post:
         self.author = post_data.get('author')
         self.post_key = post_data.get('post_key')
         self.comment_count = post_data.get('comment_count')
-        self.created_at = timestamptodatetime(post_data.get('created_at'))
+        self.created_at = post_data.get('created_at')
         self.photos = post_data.get('photos')
         self.emotion_count = post_data.get('emotion_count')
         self.latest_comments = post_data.get('latest_comments')
@@ -170,7 +177,8 @@ class Post:
 
     @property
     def access_token(self):
-        return keyring.get_password("OPENBAND", 'access_token')
+        return keyring.get_password("OPENBAND",
+                                    'access_token')
 
     def list(self):
         params = {'access_token': self.access_token,
@@ -179,7 +187,8 @@ class Post:
         if self.next_params:
             params.update(self.next_params)
 
-        res = requests.get(f'{self.band_base_url}/v2/band/posts', params=params)
+        res = requests.get(f'{self.band_base_url}/v2/band/posts',
+                           params=params)
         res_json = response_parse(res).get('result_data', {})
 
         post_list = res_json.get('items', [])
@@ -204,8 +213,9 @@ class Post:
                   'band_key': self.band_key,
                   'post_key': self.post_key}
 
-        res = requests.get(f'{self.band_base_url}/v2/band/post', params=params)
-        res_json = response_parse(res).get('result_data', {})
+        res = requests.get(f'{self.band_base_url}/v2/band/post',
+                           params=params)
+        res_json = response_parse(res).get('result_data', {}).get('post', {})
 
         return Post(
             content=res_json['content'],
@@ -215,13 +225,35 @@ class Post:
             comment_count=res_json['comment_count'],
             photos=makeobjectlist(BandPhoto, res_json['photos']),
             emotion_count=res_json['emotion_count'],
-            latest_comments=makeobjectlist(BandComment, res_json.get('latest_comments', [])),
-            band_key=res_json.get['band_key'],
+            latest_comments=makeobjectlist(BandComment,
+                                           res_json.get('latest_comments', [])),
+            band_key=res_json.get('band_key'),
             post_read_count=res_json['post_read_count']
         )
 
     def __getitem__(self, item):
         return getattr(self, item)
+
+    def delete(self):
+        params = {'access_token': self.access_token,
+                  'band_key': self.band_key,
+                  'post_key': self.post_key}
+
+        res = requests.post(f'{self.band_base_url}/v2/band/post/remove',
+                            params=params)
+        return response_parse(res).get('result_data', {}).get(
+            'message', 'Error!')
+
+    def comments(self, sort='+'):
+        params = {'access_token': self.access_token,
+                  'band_key': self.band_key,
+                  'post_key': self.post_key,
+                  'sort': f'{sort}created_at'}
+
+        res = requests.get(f'{self.band_base_url}/v2/band/post/comments',
+                            params=params)
+        return response_parse(res).get('result_data', {}).get(
+            'message', 'Error!')
 
 
 def makeobjectlist(klass, data):
@@ -258,7 +290,8 @@ class BandPhoto:
         self.is_video_thumbnail = data['is_video_thumbnail']
 
     def __repr__(self):
-        return f'<Photo {self.url} / {self.width}x{self.height} / {self.created_at}>'
+        return (f'<Photo {self.url} / {self.width}x{self.height} '
+                f'/ {self.created_at}>')
 
 
 class BandComment:
