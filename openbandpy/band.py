@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qsl, urlparse
 from urllib.parse import urlencode
 from requests.auth import HTTPBasicAuth
-from .band_data import BandAuthorize
+from .band_data import BandAuthorize, Band, response_parse, Profile
 import keyring
 
 from .band_exception import BandAPIException
@@ -20,28 +20,30 @@ class WebRequestHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
         url_query = dict(parse_qsl(self.url().query))
-        keyring.set_password('opendbandpy',
+        keyring.set_password('OPENBAND',
                              'authorization_code',
                              url_query['code'])
 
 
 class NaverBand:
     def __init__(self, client_id, client_secret) -> None:
+        self.keyring_name = 'OPENBAND'
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = 'http://localhost:8000'
-        self.access_token = None
         self.band_base_url = 'https://openapi.band.us'
         self.auth_base_url = 'https://auth.band.us'
 
+    @property
+    def access_token(self):
+        return keyring.get_password("OPENBAND", 'access_token')
+
     def set_access_token(self):
-        access_token = keyring.get_password('opendbandpy',
-                                            'access_token')
-        if not access_token:
+        if not self.access_token:
             req_data = BandAuthorize(client_id=self.client_id,
                                      client_secret=self.client_secret,
                                      response_type='code',
-                                     grant_type='authorization_cod')
+                                     grant_type='authorization_code')
             req_params = req_data.authorize_params()
 
             auth_url = f'{self.auth_base_url}/oauth2/authorize?{req_params}'
@@ -56,33 +58,30 @@ class NaverBand:
 
             auth = HTTPBasicAuth(self.client_id, self.client_secret)
             req = requests.get(access_token_url, auth=auth)
-            res_json = json.loads(req.content)
+            if req.status_code != 200:
+                raise BandAPIException('400 Bad Request. For more information, '
+                                       'see https://developers.band.us/develop'
+                                       '/guide/api'
+                                       '/get_authorization_code_from_user')
 
-            keyring.set_password('opendbandpy',
+            res_json = response_parse(req)
+
+            keyring.set_password(self.keyring_name,
                                  'access_token',
                                  res_json.get('access_token'))
 
-    def profile(self, band_key=None):
-        params = {'access_token': self.access_token}
-        if band_key:
-            params['band_key'] = band_key
-
-        res = requests.get(f'{self.band_base_url}/v2/profile', params=params)
-        res_json = json.loads(res.content)
-        if res_json['result_code'] == 1:
-            return res_json.get('result_data')
-        else:
-            raise BandAPIException('The request failed.')
+    def profile(self):
+        return Profile().request()
 
     def get_bands(self):
         params = {'access_token': self.access_token}
 
         res = requests.get(f'{self.band_base_url}/v2.1/bands', params=params)
-        res_json = json.loads(res.content)
-        if res_json['result_code'] == 1:
-            return res_json.get('result_data').get('bands', [])
-        else:
-            raise BandAPIException('The request failed.')
+        res_json = response_parse(res)
+
+        band_list = res_json.get('result_data').get('bands', [])
+        return tuple(map(lambda x: Band(
+            x['name'], x['band_key'], x['cover'], x['member_count']), band_list))
 
     def writ_post(self, band_key, content, do_push=False):
         params = {'access_token': self.access_token,
