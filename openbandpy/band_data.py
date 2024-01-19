@@ -42,7 +42,7 @@ def response_parse(response):
 
 class BandAuthorize:
     def __init__(self, *, client_id=None, client_secret=None,
-                 redirect_uri=None, response_type=None, grant_type=None):
+                 response_type=None, grant_type=None):
         self.response_type = response_type
         self.grant_type = grant_type
         self.client_id = client_id
@@ -71,15 +71,6 @@ class BandAuthorize:
         })
 
 
-class BandWrite:
-    def __init__(self, content, do_push):
-        self.content = content
-        self.do_push = do_push
-
-    def params(self):
-        return dict(content=self.content, do_push=self.do_push)
-
-
 class BandComment:
     def __init__(self, band=None, **data):
         self.band_base_url = 'https://openapi.band.us'
@@ -97,6 +88,16 @@ class BandComment:
         self.is_audio_included = data.get('is_audio_included')
         if data.get('photo'):
             self.photo = BandCommentPhoto(**data.get('photo'))
+
+    @classmethod
+    def make_comment(cls, **comment_data):
+        """Comment on a band's post
+        :param body: str
+        :return: BandComment
+
+        band_post_comment = BandComment.make_comment(body='내용')
+        post.write_comment(band_post_comment)"""
+        return cls(**comment_data)
 
     def __repr__(self):
         content = self.body or self.content
@@ -164,7 +165,7 @@ class Band:
         return Post(band_key=self.band_key, next_params=next_params,
                     band=self).list()
 
-    def write(self, data: BandWrite):
+    def write(self, data):
         if 'posting' not in self.permissions:
             raise BandAPIException("The band doesn't have write permissions.")
 
@@ -197,7 +198,8 @@ class Band:
         albums_list = res_json.get('items', [])
         paging = res_json.get('paging')
 
-        return tuple(map(lambda x: BandAlbum(**x), albums_list)), paging['next_params']
+        return tuple(map(lambda x: BandAlbum(
+            band_key=self.band_key, **x), albums_list)), paging['next_params']
 
 
 class Profile:
@@ -256,6 +258,21 @@ class Post:
         self.emotion_count = post_data.get('emotion_count')
         self.latest_comments = post_data.get('latest_comments')
         self.post_read_count = post_data.get('post_read_count', -1)
+        self.do_push = post_data.get('do_push', False)
+
+    @classmethod
+    def make_post(cls, **post_data):
+        """Write to a band
+        :param content: str
+        :param do_push: bool
+        :return: Post
+
+        band_post = Post.make_post(content='내용', do_push=False)
+        bands[1].write(band_post)"""
+        return cls(**post_data)
+
+    def params(self):
+        return dict(content=self.content, do_push=self.do_push)
 
     @property
     def access_token(self):
@@ -436,12 +453,14 @@ class BandCommentPhoto:
 
 
 class BandAlbum:
-    def __init__(self, **data):
+    def __init__(self, band_key=None, **data):
         self.photo_album_key = data['photo_album_key']
         self.name = data['name']
         self.photo_count = data['photo_count']
         self.created_at = timestamptodatetime(data['created_at'])
         self.author = BandAuthor(**data['author'])
+        self.band_base_url = 'https://openapi.band.us'
+        self.band_key = band_key
 
     def __repr__(self):
         return (f'<BandAlbum {self.name} / {self.photo_count} / '
@@ -449,6 +468,11 @@ class BandAlbum:
 
     def __getitem__(self, item):
         return getattr(self, item)
+
+    @property
+    def access_token(self):
+        return keyring.get_password("OPENBAND",
+                                    'access_token')
 
     def photos(self, next_params):
         params = dict(access_token=self.access_token,

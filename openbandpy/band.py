@@ -82,3 +82,13 @@ class NaverBand:
         band_list = res_json.get('result_data').get('bands', [])
         return tuple(map(lambda x: Band(
             x['name'], x['band_key'], x['cover'], x['member_count']), band_list))
+
+    def get_band_name(self, band_name):
+        for item in self.get_bands():
+            if item['name'] == band_name:
+                return item
+
+    def get_band_key(self, band_key):
+        for item in self.get_bands():
+            if item['band_key'] == band_key:
+                return item
