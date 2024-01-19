@@ -395,6 +395,9 @@ class BandAuthor:
     def __repr__(self):
         return f'<Author {self.name} / {self.description} / {self.role}>'
 
+    def __getitem__(self, item):
+        return getattr(self, item)
+
 
 class BandPhoto:
     def __init__(self, **data):
@@ -413,9 +416,35 @@ class BandPhoto:
         return (f'<Photo {self.url} / {self.width}x{self.height} '
                 f'/ {self.created_at}>')
 
+    def __getitem__(self, item):
+        return getattr(self, item)
+
 
 class BandCommentPhoto:
     def __init__(self, **data):
         self.url = data.get('url')
         self.height = data.get('height')
         self.width = data.get('width')
+
+    def __repr__(self):
+        return (f'<CommentPhoto {self.url} / '
+                f'{self.width}x{self.height}>')
+
+    def __getitem__(self, item):
+        return getattr(self, item)
+
+
+class BandPhotoAlbum:
+    def __init__(self, **data):
+        self.photo_album_key = data['photo_album_key']
+        self.name = data['name']
+        self.photo_count = data['photo_count']
+        self.created_at = timestamptodatetime(data['created_at'])
+        self.author = BandAuthor(**data['author'])
+
+    def __repr__(self):
+        return (f'<BandPhotoAlbum {self.name} / {self.photo_count} / '
+                f'{self.created_at}>')
+
+    def __getitem__(self, item):
+        return getattr(self, item)
