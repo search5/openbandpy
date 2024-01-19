@@ -34,7 +34,8 @@ def response_parse(response):
                                f'({detail_error})\n{detail_description}')
 
     if content_type.startswith('application/json'):
-        return json.loads(response.content)
+        json_obj = json.loads(response.content)
+        return json_obj
     else:
         raise BandAPIException('Invalid content type')
 
@@ -80,9 +81,9 @@ class BandWrite:
 
 
 class BandComment:
-    def __init__(self, band_permissions=None, **data):
+    def __init__(self, band=None, **data):
         self.band_base_url = 'https://openapi.band.us'
-        self.band_permissions = band_permissions
+        self.band = band
         self.body = data.get('body')
         if 'author' in data:
             self.author = BandAuthor(**data.get('author'))
@@ -113,8 +114,14 @@ class BandComment:
         return dict(body=self.body)
 
     def delete(self):
-        if 'contents_deletion' not in self.band_permissions:
-            raise BandAPIException("The band doesn't have delete permissions.")
+        if self.author.user_key != self.band.me_profile['user_key']:
+            # If the user you are approaching is not the same as
+            # the user who wrote the post, look at the band's permissions.
+            # In this case, the leader may have the post/reply
+            # delete permission, so we add the logic below.
+            if 'contents_deletion' not in self.band.permissions:
+                raise BandAPIException(
+                    "The band doesn't have delete permissions.")
 
         params = {'access_token': self.access_token,
                   'band_key': self.band_key,
@@ -123,8 +130,11 @@ class BandComment:
 
         res = requests.post(f'{self.band_base_url}/v2/band/post/comment/remove',
                             params=params)
-        return response_parse(res).get('result_data', {}).get(
-            'message', 'Error!')
+        parse_result = response_parse(res)
+        result_data = parse_result.get('result_data', {})
+
+        return (parse_result.get('result_code'),
+                result_data.get('message', 'Error!'))
 
 
 class Band:
@@ -152,7 +162,7 @@ class Band:
 
     def posts(self, next_params=None):
         return Post(band_key=self.band_key, next_params=next_params,
-                    band_permission=self.permissions).list()
+                    band=self).list()
 
     def write(self, data: BandWrite):
         if 'posting' not in self.permissions:
@@ -174,7 +184,7 @@ class Band:
                             params=params)
         data = response_parse(res).get('result_data', {})
 
-        return data['permission']
+        return data['permissions']
 
     def albums(self):
         # TODO
@@ -231,9 +241,9 @@ class Profile:
 
 
 class Post:
-    def __init__(self, *, band_key=None, next_params=None, band_permissions=None, **post_data):
+    def __init__(self, *, band_key=None, next_params=None, band=None, **post_data):
         self.band_key = band_key or post_data['band_key']
-        self.band_permissions = band_permissions
+        self.band = band
         self.band_base_url = 'https://openapi.band.us'
         self.post_data = {}
         self.next_params = next_params
@@ -275,7 +285,8 @@ class Post:
             photos=makeobjectlist(BandPhoto, x['photos']),
             emotion_count=x['emotion_count'],
             latest_comments=x.get('latest_comments', []),
-            band_key=x['band_key']), post_list)), paging['next_params']
+            band_key=x['band_key'],
+            band=self.band), post_list)), paging['next_params']
 
     def __repr__(self):
         return f'<Band: {self.content}>'
@@ -300,15 +311,22 @@ class Post:
             latest_comments=makeobjectlist(BandComment,
                                            res_json.get('latest_comments', [])),
             band_key=res_json.get('band_key'),
-            post_read_count=res_json['post_read_count']
+            post_read_count=res_json['post_read_count'],
+            band=self.band
         )
 
     def __getitem__(self, item):
         return getattr(self, item)
 
     def delete(self):
-        if 'contents_deletion' not in self.band_permissions:
-            raise BandAPIException("The band doesn't have delete permissions.")
+        if self.author.user_key != self.band.me_profile['user_key']:
+            # If the user you are approaching is not the same as
+            # the user who wrote the post, look at the band's permissions.
+            # In this case, the leader may have the post/reply
+            # delete permission, so we add the logic below.
+            if 'contents_deletion' not in self.band.permissions:
+                raise BandAPIException(
+                    "The band doesn't have delete permissions.")
 
         params = {'access_token': self.access_token,
                   'band_key': self.band_key,
@@ -316,8 +334,11 @@ class Post:
 
         res = requests.post(f'{self.band_base_url}/v2/band/post/remove',
                             params=params)
-        return response_parse(res).get('result_data', {}).get(
-            'message', 'Error!')
+        parse_result = response_parse(res)
+        result_data = parse_result.get('result_data', {})
+
+        return (parse_result.get('result_code'),
+                result_data.get('message', 'Error!'))
 
     def comments(self, sort='+', next_params=None):
         params = {'access_token': self.access_token,
@@ -336,11 +357,12 @@ class Post:
         comment_list = res_json.get('items', [])
         paging = res_json.get('paging')
 
-        return (tuple(map(lambda x: BandComment(**x), comment_list)),
+        return (tuple(map(lambda x: BandComment(
+            band=self.band, **x), comment_list)),
                 paging['next_params'])
 
     def write_comment(self, data: BandComment):
-        if 'commenting' not in self.band_permissions:
+        if 'commenting' not in self.band.permissions:
             raise BandAPIException("You don't have permission to comment on the band")
 
         params = data.params()
@@ -368,7 +390,7 @@ class BandAuthor:
 
     @property
     def isleader(self):
-        return self.role == 'leader'
+        return self.role == 'leader' or self.role == 'coleader'
 
     def __repr__(self):
         return f'<Author {self.name} / {self.description} / {self.role}>'

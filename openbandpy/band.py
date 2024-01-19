@@ -82,17 +82,3 @@ class NaverBand:
         band_list = res_json.get('result_data').get('bands', [])
         return tuple(map(lambda x: Band(
             x['name'], x['band_key'], x['cover'], x['member_count']), band_list))
-
-    def writ_post(self, band_key, content, do_push=False):
-        params = {'access_token': self.access_token,
-                  'band_key': band_key,
-                  'content': content,
-                  'do_push': do_push}
-
-        res = requests.post(f'{self.band_base_url}/v2.2/band/post/create', params=params)
-        res_json = json.loads(res.content)
-        if res_json['result_code'] == 1:
-            return res_json.get('result_data').get('bands', [])
-        else:
-            print(res_json)
-            raise BandAPIException('The request failed.')
