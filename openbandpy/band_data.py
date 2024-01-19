@@ -186,18 +186,18 @@ class Band:
 
         return data['permissions']
 
-    def albums(self):
-        # TODO
-        """[GET] https://openapi.band.us/v2/band/albums
-        Parameters
-        Name	Type	Mandatory	Description
-        access_token	string	Y	사용자 인증 접근 토큰
-        band_key	string	Y	밴드 식별자"""
-        pass
+    def albums(self, next_params=None):
+        params = dict(access_token=self.access_token, band_key=self.band_key)
+        if next_params:
+            params.update(next_params)
+        res = requests.get(f'{self.band_base_url}/v2/band/albums',
+                           params=params)
+        res_json = response_parse(res).get('result_data', {})
 
-    def photos(self):
-        # TODO
-        pass
+        albums_list = res_json.get('items', [])
+        paging = res_json.get('paging')
+
+        return tuple(map(lambda x: BandAlbum(**x), albums_list)), paging['next_params']
 
 
 class Profile:
@@ -363,7 +363,8 @@ class Post:
 
     def write_comment(self, data: BandComment):
         if 'commenting' not in self.band.permissions:
-            raise BandAPIException("You don't have permission to comment on the band")
+            raise BandAPIException(
+                "You don't have permission to comment on the band")
 
         params = data.params()
         params.update(access_token=self.access_token,
@@ -434,7 +435,7 @@ class BandCommentPhoto:
         return getattr(self, item)
 
 
-class BandPhotoAlbum:
+class BandAlbum:
     def __init__(self, **data):
         self.photo_album_key = data['photo_album_key']
         self.name = data['name']
@@ -443,7 +444,43 @@ class BandPhotoAlbum:
         self.author = BandAuthor(**data['author'])
 
     def __repr__(self):
-        return (f'<BandPhotoAlbum {self.name} / {self.photo_count} / '
+        return (f'<BandAlbum {self.name} / {self.photo_count} / '
+                f'{self.created_at}>')
+
+    def __getitem__(self, item):
+        return getattr(self, item)
+
+    def photos(self, next_params):
+        params = dict(access_token=self.access_token,
+                      band_key=self.band_key,
+                      photo_album_key=self.photo_album_key)
+        if next_params:
+            params.update(next_params)
+        res = requests.get(f'{self.band_base_url}/v2/band/album/photos',
+                           params=params)
+        res_json = response_parse(res).get('result_data', {})
+
+        photo_list = res_json.get('items', [])
+        paging = res_json.get('paging')
+
+        return (tuple(map(lambda x: BandAlbumPhoto(**x), photo_list)),
+                paging['next_params'])
+
+
+class BandAlbumPhoto:
+    def __init__(self, **data):
+        self.photo_key = data['photo_key']
+        self.url = data['url']
+        self.width = data['width']
+        self.height = data['height']
+        self.photo_album_key = data['photo_album_key']
+        self.created_at = timestamptodatetime(data['created_at'])
+        self.author = BandAuthor(**data['author'])
+        self.comment_count = data['comment_count']
+        self.emotion_count = data['emotion_count']
+
+    def __repr__(self):
+        return (f'<BandAlbumPhoto {self.url} / {self.author} / '
                 f'{self.created_at}>')
 
     def __getitem__(self, item):
